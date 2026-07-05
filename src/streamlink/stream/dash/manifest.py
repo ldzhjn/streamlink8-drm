@@ -411,6 +411,29 @@ class MPD(MPDNode):
                         continue
                     return representation
 
+    def get_period_successor(self, ident: TTimelineIdent) -> Representation | None:
+        """
+        Find a matching Representation in a subsequent Period.
+        """
+        _, adaptationset_id, representation_id = ident
+        found_current = False
+        fallback = None
+
+        for period in self.periods:
+            for adaptationset in period.adaptationSets:
+                for representation in adaptationset.representations:
+                    if adaptationset.id != adaptationset_id or representation.id != representation_id:
+                        continue
+                    if representation.ident == ident:
+                        found_current = True
+                        continue
+                    if found_current:
+                        return representation
+                    if fallback is None:
+                        fallback = representation
+
+        return None if found_current else fallback
+
 
 class ProgramInformation(MPDNode):
     __tag__ = "ProgramInformation"

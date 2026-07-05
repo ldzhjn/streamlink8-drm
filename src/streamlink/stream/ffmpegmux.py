@@ -208,6 +208,9 @@ class FFMPEGMuxer(StreamIO):
         maps = options.pop("maps", [])
         copyts = session.options.get("ffmpeg-copyts") or options.pop("copyts", False)
         start_at_zero = session.options.get("ffmpeg-start-at-zero") or options.pop("start_at_zero", False)
+        deckey = session.options.get("decryption_key")
+        deckey2 = session.options.get("decryption_key_2") or deckey
+        cur_deckey = deckey
 
         self._cmd = [
             self.command(session),
@@ -218,6 +221,9 @@ class FFMPEGMuxer(StreamIO):
         ]
 
         for np in self.pipes:
+            if cur_deckey:
+                self._cmd.extend(["-decryption_key", cur_deckey])
+                cur_deckey = deckey2 if cur_deckey == deckey else deckey
             self._cmd.extend(["-i", str(np.path)])
 
         self._cmd.extend(["-c:v", videocodec])

@@ -87,6 +87,56 @@ class TestDASHStreamParseManifest:
         assert mpd.call_args_list == [call(ANY, url="http://test/manifest.mpd", base_url="http://test/manifest.mpd")]
         assert sorted(streams.keys()) == sorted(["720p", "1080p"])
 
+    def test_dynamic_defaults_to_last_period(self, session: Streamlink, mpd: Mock):
+        old_adaptationset = Mock(
+            contentProtections=None,
+            representations=[
+                Mock(id="1", contentProtections=None, mimeType="video/mp4", height=360),
+            ],
+        )
+        current_adaptationset = Mock(
+            contentProtections=None,
+            representations=[
+                Mock(id="2", contentProtections=None, mimeType="video/mp4", height=720),
+            ],
+        )
+        mpd.return_value = Mock(
+            type="dynamic",
+            periods=[
+                Mock(adaptationSets=[old_adaptationset]),
+                Mock(adaptationSets=[current_adaptationset]),
+            ],
+        )
+
+        streams = DASHStream.parse_manifest(session, "http://test/manifest.mpd")
+
+        assert sorted(streams.keys()) == ["720p"]
+
+    def test_dynamic_explicit_period(self, session: Streamlink, mpd: Mock):
+        old_adaptationset = Mock(
+            contentProtections=None,
+            representations=[
+                Mock(id="1", contentProtections=None, mimeType="video/mp4", height=360),
+            ],
+        )
+        current_adaptationset = Mock(
+            contentProtections=None,
+            representations=[
+                Mock(id="2", contentProtections=None, mimeType="video/mp4", height=720),
+            ],
+        )
+        mpd.return_value = Mock(
+            type="dynamic",
+            periods=[
+                Mock(adaptationSets=[old_adaptationset]),
+                Mock(adaptationSets=[current_adaptationset]),
+            ],
+        )
+
+        streams = DASHStream.parse_manifest(session, "http://test/manifest.mpd", period=0)
+
+        assert sorted(streams.keys()) == ["360p"]
+
     def test_audio_only(self, session: Streamlink, mpd: Mock):
         adaptationset = Mock(
             contentProtections=None,
@@ -331,6 +381,12 @@ class TestDASHStreamParseManifest:
                 ],
                 id="passthrough-encrypted",
             ),
+            pytest.param(
+                {"decryption_key": "00" * 16},
+                does_not_raise,
+                [],
+                id="ffmpeg-decryption",
+            ),
         ],
         indirect=["session"],
     )
@@ -494,6 +550,7 @@ class TestDASHStreamWorker:
             minimumUpdatePeriod=Mock(total_seconds=Mock(return_value=0)),
             periods=[period],
             get_representation=Mock(return_value=representation),
+            get_period_successor=Mock(return_value=None),
         )
 
     @pytest.fixture()
@@ -574,7 +631,10 @@ class TestDASHStreamWorker:
         representation.segments.reset_mock()
         representation.segments.return_value = segments[3:]
         assert self._next_segments(worker, segment_iter, 3) == segments[3:]
-        assert representation.segments.call_args_list == [call(), call(sequence=1, init=False, timestamp=None)]
+        assert representation.segments.call_args_list == [
+            call(sequence=1, init=False),
+            call(sequence=1, init=False, timestamp=None),
+        ]
         assert not worker._wait.is_set()
         assert [(record.name, record.levelname, record.message) for record in caplog.records] == [
             (
@@ -583,6 +643,33 @@ class TestDASHStreamWorker:
                 "Sequence gap of 1 segment at position 1. This is unsupported and will result in incoherent output data.",
             ),
         ]
+
+    def test_dynamic_reload_next_period(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        worker: DASHStreamWorker,
+        segments: list[DASHSegment],
+    ):
+        old_representation = Mock(ident=("old", None, "1"))
+        old_representation.segments.return_value = []
+        new_representation = Mock(ident=("new", None, "1"))
+        new_representation.segments.return_value = segments[:1]
+        new_mpd = Mock(
+            type="dynamic",
+            timelines={},
+            get_representation=Mock(return_value=old_representation),
+            get_period_successor=Mock(return_value=new_representation),
+        )
+        monkeypatch.setattr("streamlink.stream.dash.dash.MPD", lambda *args, **kwargs: new_mpd)
+        worker.reader.ident = old_representation.ident
+
+        assert worker.reload() is True
+
+        assert worker.mpd is new_mpd
+        assert worker.reader.ident == new_representation.ident
+        assert worker.period_changed is True
+        assert old_representation.segments.call_args_list == [call(sequence=-1, init=False)]
+        assert new_representation.segments.call_args_list == [call(sequence=-1, init=False)]
 
     def test_dynamic_reload_missing_representation(
         self,
@@ -666,6 +753,27 @@ class TestDASHStreamWorker:
         assert representation.segments.call_args_list == [call(sequence=-1, init=True, timestamp=timestamp)]
         assert mock_wait.call_args_list == [call(5)]
         assert worker._wait.is_set()
+
+    def test_dynamic_refresh_wait_ignores_period_duration(
+        self,
+        mock_wait: Mock,
+        worker: DASHStreamWorker,
+        representation: Mock,
+        segments: list[DASHSegment],
+        mpd: Mock,
+    ):
+        mpd.type = "dynamic"
+        mpd.minimumUpdatePeriod.total_seconds.return_value = 3
+        representation.period.duration.total_seconds.return_value = 3600
+        representation.segments.return_value = segments[:1]
+        worker.reload = Mock(return_value=False)
+
+        segment_iter = self._iter_segments(worker.iter_segments())
+        assert next(segment_iter) is segments[0]
+        assert next(segment_iter) is segments[0]
+        assert next(segment_iter) is segments[0]
+
+        assert mock_wait.call_args_list == [call(3), call(3.9)]
 
     @pytest.mark.parametrize(
         ("stream", "session"),

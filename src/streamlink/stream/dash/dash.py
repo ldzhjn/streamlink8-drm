@@ -89,6 +89,7 @@ class DASHStreamWorker(SegmentedStreamWorker[DASHSegment, Response]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mpd = self.stream.mpd
+        self.period_changed = False
 
         self.manifest_reload_retries = self.session.options.get("dash-manifest-reload-attempts")
         self.duration_limit = self.stream.duration or self.duration_limit
@@ -118,13 +119,7 @@ class DASHStreamWorker(SegmentedStreamWorker[DASHSegment, Response]):
             if self.mpd.type == "static":
                 refresh_wait = 5
             else:
-                refresh_wait = (
-                    max(
-                        self.mpd.minimumUpdatePeriod.total_seconds(),
-                        representation.period.duration.total_seconds() if representation else 0,
-                    )
-                    or 5
-                )
+                refresh_wait = self.mpd.minimumUpdatePeriod.total_seconds() or 5
 
             with self.sleeper(refresh_wait * back_off_factor):
                 if not representation:
@@ -153,9 +148,12 @@ class DASHStreamWorker(SegmentedStreamWorker[DASHSegment, Response]):
                     return
 
                 if not self.reload():
-                    back_off_factor = max(back_off_factor * 1.3, 10.0)
+                    back_off_factor = min(back_off_factor * 1.3, 10.0)
                 else:
                     back_off_factor = 1
+
+                init = self.period_changed
+                self.period_changed = False
 
     def reload(self):
         if self.closed:
@@ -178,13 +176,26 @@ class DASHStreamWorker(SegmentedStreamWorker[DASHSegment, Response]):
         )
 
         new_rep = new_mpd.get_representation(self.reader.ident)
+
+        def has_media_segments(rep: Representation | None) -> bool:
+            if not rep:
+                return False
+            with freeze_timeline(new_mpd):
+                return len(list(itertools.islice(rep.segments(sequence=self.sequence, init=False), 1))) > 0
+
+        changed = has_media_segments(new_rep)
+        if not changed and new_mpd.type == "dynamic":
+            successor = new_mpd.get_period_successor(self.reader.ident)
+            if has_media_segments(successor):
+                new_rep = successor
+                self.reader.ident = new_rep.ident
+                self.period_changed = True
+                changed = True
+
         if not new_rep:
             log.error(f"Failed to find matching DASH representation: {self.reader.ident!r}")
             self.close()
             return False
-
-        with freeze_timeline(new_mpd):
-            changed = len(list(itertools.islice(new_rep.segments(), 1))) > 0
 
         if changed:
             self.mpd = new_mpd
@@ -291,7 +302,7 @@ class DASHStream(Stream):
         cls,
         session: Streamlink,
         url_or_manifest: str,
-        period: int | str = 0,
+        period: int | str | None = None,
         with_video_only: bool = False,
         with_audio_only: bool = False,
         **kwargs,
@@ -301,7 +312,8 @@ class DASHStream(Stream):
 
         :param session: Streamlink session instance
         :param url_or_manifest: URL of the manifest file or an XML manifest string
-        :param period: Which MPD period to use (index number (int) or ``id`` attribute (str)) for finding representations
+        :param period: Which MPD period to use (index number (int) or ``id`` attribute (str)) for finding representations.
+                       Defaults to the last Period for dynamic MPDs, otherwise the first Period.
         :param with_video_only: Also return video-only streams, otherwise only return muxed streams
         :param with_audio_only: Also return audio-only streams, otherwise only return muxed streams
         :param kwargs: Additional keyword arguments passed to :class:`DASHStream` or :meth:`requests.Session.request`
@@ -309,6 +321,8 @@ class DASHStream(Stream):
 
         manifest, mpd_params = cls.fetch_manifest(session, url_or_manifest, **kwargs)
         passthrough_encrypted = session.options.get("stream-passthrough-encrypted")
+        ffmpeg_decryption = bool(session.options.get("decryption_key"))
+        allow_encrypted = passthrough_encrypted or ffmpeg_decryption
 
         try:
             mpd = cls.parse_mpd(manifest, mpd_params)
@@ -323,7 +337,9 @@ class DASHStream(Stream):
         log.debug(f"Available DASH periods: {', '.join(available_periods)}")
 
         try:
-            if isinstance(period, int):
+            if period is None:
+                period_selection = mpd.periods[-1] if mpd.type == "dynamic" else mpd.periods[0]
+            elif isinstance(period, int):
                 period_selection = mpd.periods[period]
             else:
                 period_selection = mpd.periods_map[period]
@@ -334,17 +350,17 @@ class DASHStream(Stream):
 
         # Search for suitable video and audio representations
         for aset in period_selection.adaptationSets:
-            if aset.contentProtections and not passthrough_encrypted:
+            if aset.contentProtections and not allow_encrypted:
                 raise PluginError(f"{source} is protected by DRM")
             for rep in aset.representations:
-                if rep.contentProtections and not passthrough_encrypted:
+                if rep.contentProtections and not allow_encrypted:
                     raise PluginError(f"{source} is protected by DRM")
                 if rep.mimeType.startswith("video"):
                     video.append(rep)
                 elif rep.mimeType.startswith("audio"):  # pragma: no branch
                     audio.append(rep)
 
-        if passthrough_encrypted:
+        if passthrough_encrypted and not ffmpeg_decryption:
             is_encrypted = any(
                 aset.contentProtections or any(rep.contentProtections for rep in aset.representations)
                 for aset in period_selection.adaptationSets

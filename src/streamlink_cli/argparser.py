@@ -1332,6 +1332,27 @@ def build_parser():
         """,
     )
     transport_ffmpeg.add_argument(
+        "-decryption_key",
+        metavar="KEY",
+        help="""
+            Use a CENC decryption key to decrypt the media that FFmpeg receives as an input from DASH or HLS fMP4 streams.
+
+            If only one decryption key is provided, it will be used for every FFmpeg input. If -decryption_key_2 is also
+            provided, the two keys will be alternated across FFmpeg inputs.
+
+            Example: -decryption_key "<hex key>"
+        """,
+    )
+    transport_ffmpeg.add_argument(
+        "-decryption_key_2",
+        metavar="KEY",
+        help="""
+            Use a second CENC decryption key for FFmpeg inputs.
+
+            Example: -decryption_key_2 "<hex key>"
+        """,
+    )
+    transport_ffmpeg.add_argument(
         "--ffmpeg-validation-timeout",
         type=float,
         metavar="SECONDS",
@@ -1599,6 +1620,8 @@ _ARGUMENT_TO_SESSIONOPTION: list[tuple[str, str, Callable[[Any], Any] | type | N
     ("ffmpeg_audio_transcode", "ffmpeg-audio-transcode", None),
     ("ffmpeg_copyts", "ffmpeg-copyts", None),
     ("ffmpeg_start_at_zero", "ffmpeg-start-at-zero", None),
+    ("decryption_key", "decryption_key", None),
+    ("decryption_key_2", "decryption_key_2", None),
     # web browser arguments
     ("webbrowser", "webbrowser", None),
     ("webbrowser_executable", "webbrowser-executable", None),

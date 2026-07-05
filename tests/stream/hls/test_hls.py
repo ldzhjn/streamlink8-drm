@@ -17,7 +17,7 @@ import requests_mock as rm
 from requests import Response
 from requests.exceptions import InvalidSchema
 
-from streamlink.exceptions import StreamlinkDeprecationWarning
+from streamlink.exceptions import StreamError, StreamlinkDeprecationWarning
 from streamlink.stream.hls import (
     M3U8,
     HLSPlaylist,
@@ -112,6 +112,43 @@ def test_repr(session: Streamlink):
     multivariant.is_master = True
     stream = HLSStream(session, "https://foo.bar/playlist.m3u8", multivariant=multivariant)
     assert repr(stream) == "<HLSStream ['hls', 'https://foo.bar/playlist.m3u8', 'https://foo.bar/master.m3u8']>"
+
+
+def test_open_ffmpeg_decryption(session: Streamlink):
+    session.set_option("decryption_key", "00" * 16)
+    reader = Mock()
+    output = Mock()
+    stream = HLSStream(session, "https://foo.bar/playlist.m3u8")
+
+    with patch.object(HLSStream, "__reader__", Mock(return_value=reader)), \
+         patch("streamlink.stream.hls.hls.FFMPEGMuxer") as mock_muxer:
+        mock_muxer.is_usable.return_value = True
+        mock_muxer.return_value.open.return_value = output
+
+        assert stream.open() is output
+
+    assert reader.open.call_args_list == [call()]
+    assert mock_muxer.mock_calls == [
+        call.is_usable(session),
+        call(session, reader),
+        call().open(),
+    ]
+
+
+def test_open_ffmpeg_decryption_unusable(session: Streamlink):
+    session.set_option("decryption_key", "00" * 16)
+    reader = Mock()
+    stream = HLSStream(session, "https://foo.bar/playlist.m3u8")
+
+    with patch.object(HLSStream, "__reader__", Mock(return_value=reader)), \
+         patch("streamlink.stream.hls.hls.FFMPEGMuxer") as mock_muxer:
+        mock_muxer.is_usable.return_value = False
+
+        with pytest.raises(StreamError, match="Cannot decrypt HLS DRM stream without FFmpeg"):
+            stream.open()
+
+    assert reader.open.call_args_list == [call()]
+    assert reader.close.call_args_list == [call()]
 
 
 class TestHLSVariantPlaylist:
@@ -1078,6 +1115,25 @@ class TestHLSStreamEncrypted(TestMixinStreamHLS, unittest.TestCase):
 
         assert data == self.content(segments, prop="content_plain")
         assert mock_log.error.call_args_list == []
+
+    def test_hls_encrypted_cenc_passthrough(self):
+        _, __, key = self.gen_key(method="SAMPLE-AES", keyformat="com.widevine", uri=False)
+        map1 = TagMap(1, self.id())
+        self.mock("GET", self.url(map1), content=map1.content)
+
+        segments = self.subject(
+            [
+                Playlist(0, [key, map1] + [Segment(num) for num in range(2)], end=True),
+            ],
+            options={"decryption_key": "00" * 16},
+        )
+
+        self.await_write(1 + 2)
+        data = self.await_read(read_all=True)
+        self.await_close()
+
+        assert data == self.content([map1, segments[0], segments[1]])
+        assert not self.called(key), "Does not fetch an HLS AES key for CENC passthrough"
 
     def test_hls_encrypted_aes128_with_map(self):
         aesKey, aesIv, key = self.gen_key()

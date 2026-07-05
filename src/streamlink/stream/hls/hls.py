@@ -101,6 +101,9 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
     def num_to_iv(n: int) -> bytes:
         return struct.pack(">8xq", n)
 
+    def has_cenc_decryption_key(self) -> bool:
+        return bool(self.session.options.get("decryption_key"))
+
     def create_decryptor(self, key: Key, num: int):
         if key.method != "AES-128":
             raise StreamError(f"Unable to decrypt cipher {key.method}")
@@ -263,6 +266,16 @@ class HLSStreamWriter(SegmentedStreamWriter[HLSSegment, Response]):
         key = segment.map.key if is_map and segment.map else segment.key
 
         if key and key.method != "NONE" and not self.passthrough_encrypted:
+            if key.method != "AES-128" and self.has_cenc_decryption_key():
+                log.debug(f"Passing through {key.method} encrypted segment {segment.num} to FFmpeg")
+                try:
+                    for chunk in result.iter_content(self.WRITE_CHUNK_SIZE):
+                        self.reader.buffer.write(chunk)
+                except (ChunkedEncodingError, ContentDecodingError, ConnectionError) as err:
+                    log.error(f"Download of segment {segment.num} failed: {err}")
+                    return
+                return
+
             try:
                 decryptor = self.create_decryptor(key, segment.num)
             except (StreamError, ValueError) as err:
@@ -594,6 +607,7 @@ class MuxedHLSStream(MuxedStream[TMuxedHLSStream_co]):
                 multivariant=multivariant,
                 force_restart=force_restart,
                 name=None if idx == 0 else "audio",
+                ffmpeg_decryption=False,
                 **kwargs,
             )
             for idx, url in enumerate(tracks)
@@ -630,6 +644,7 @@ class HLSStream(HTTPStream):
         force_restart: bool = False,
         start_offset: float = 0,
         duration: float | None = None,
+        ffmpeg_decryption: bool = True,
         **kwargs,
     ):
         """
@@ -640,6 +655,7 @@ class HLSStream(HTTPStream):
         :param force_restart: Start from the beginning after reaching the playlist's end
         :param start_offset: Number of seconds to be skipped from the beginning
         :param duration: Number of seconds until ending the stream
+        :param ffmpeg_decryption: Use FFmpeg for CENC decryption when a key is configured
         :param kwargs: Additional keyword arguments passed to :meth:`requests.Session.request`
         """
 
@@ -649,6 +665,10 @@ class HLSStream(HTTPStream):
         self.force_restart = force_restart
         self.start_offset = start_offset
         self.duration = duration
+        self.ffmpeg_decryption = ffmpeg_decryption
+
+    def should_use_ffmpeg_decryption(self) -> bool:
+        return self.ffmpeg_decryption and bool(self.session.options.get("decryption_key"))
 
     def __json__(self):  # noqa: PLW3201
         json = super().__json__()
@@ -677,6 +697,13 @@ class HLSStream(HTTPStream):
     def open(self):
         reader = self.__reader__(self, name=self.name)
         reader.open()
+
+        if self.should_use_ffmpeg_decryption():
+            if not FFMPEGMuxer.is_usable(self.session):
+                reader.close()
+                raise StreamError("Cannot decrypt HLS DRM stream without FFmpeg")
+
+            return FFMPEGMuxer(self.session, reader).open()
 
         return reader
 

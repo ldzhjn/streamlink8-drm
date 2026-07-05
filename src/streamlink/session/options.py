@@ -262,6 +262,14 @@ class StreamlinkOptions(Options):
           - ``bool``
           - ``False``
           - When ``ffmpeg-copyts`` is ``True``, shift timestamps to zero
+        * - decryption_key
+          - ``str | None``
+          - ``None``
+          - CENC decryption key for FFmpeg inputs
+        * - decryption_key_2
+          - ``str | None``
+          - ``None``
+          - Second CENC decryption key for FFmpeg inputs
         * - webbrowser
           - ``bool``
           - ``True``
@@ -330,6 +338,8 @@ class StreamlinkOptions(Options):
             "ffmpeg-audio-transcode": None,
             "ffmpeg-copyts": False,
             "ffmpeg-start-at-zero": False,
+            "decryption_key": None,
+            "decryption_key_2": None,
             "webbrowser": True,
             "webbrowser-executable": None,
             "webbrowser-timeout": 20.0,

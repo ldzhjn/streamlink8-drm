@@ -604,6 +604,22 @@ class TestOpen:
 
         streamio.close()
 
+    def test_ffmpeg_args_decryption_keys(self, session: Streamlink):
+        session.options.update({"decryption_key": "00" * 16, "decryption_key_2": "11" * 16})
+
+        streamio = FFMPEGMuxer(session, Mock(), Mock())
+
+        assert streamio._cmd[5:13] == [
+            "-decryption_key",
+            "00" * 16,
+            "-i",
+            str(streamio.pipes[0].path),
+            "-decryption_key",
+            "11" * 16,
+            "-i",
+            str(streamio.pipes[1].path),
+        ]
+
     def test_stderr(self, monkeypatch: pytest.MonkeyPatch, session: Streamlink, popen: Mock):
         mock_stderr = Mock()
         session.options.update({"ffmpeg-verbose": True})
