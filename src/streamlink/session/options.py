@@ -208,6 +208,10 @@ class StreamlinkOptions(Options):
           - Override the address of the encrypted HLS stream's key,
             with support for the following string template variables:
             ``{url}``, ``{scheme}``, ``{netloc}``, ``{path}``, ``{query}``
+        * - hls-allow-insecure-uris
+          - ``bool``
+          - ``False``
+          - Allow HLS playlists loaded from secure URLs to reference insecure HTTP resources
         * - hls-audio-select
           - ``List[str]``
           - ``[]``
@@ -325,6 +329,7 @@ class StreamlinkOptions(Options):
             "hls-segment-stream-data": False,
             "hls-segment-ignore-names": [],
             "hls-segment-key-uri": None,
+            "hls-allow-insecure-uris": False,
             "hls-audio-select": [],
             "dash-manifest-reload-attempts": 3,
             "ffmpeg-ffmpeg": None,

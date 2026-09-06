@@ -1175,6 +1175,19 @@ def build_parser():
         """,
     )
     transport_hls.add_argument(
+        "--hls-allow-insecure-uris",
+        action="store_true",
+        default=None,
+        help="""
+            Allow HLS playlists loaded from secure URLs to reference insecure HTTP resources.
+
+            This is useful for providers which publish HTTPS master playlists but use HTTP media playlists or segments.
+            This is enabled automatically when -decryption_key is set.
+
+            Default is false.
+        """,
+    )
+    transport_hls.add_argument(
         "--hls-audio-select",
         type=comma_list,
         metavar="CODE",
@@ -1608,6 +1621,7 @@ _ARGUMENT_TO_SESSIONOPTION: list[tuple[str, str, Callable[[Any], Any] | type | N
     ("hls_segment_stream_data", "hls-segment-stream-data", None),
     ("hls_segment_ignore_names", "hls-segment-ignore-names", None),
     ("hls_segment_key_uri", "hls-segment-key-uri", None),
+    ("hls_allow_insecure_uris", "hls-allow-insecure-uris", None),
     ("hls_audio_select", "hls-audio-select", None),
     ("dash_manifest_reload_attempts", "dash-manifest-reload-attempts", None),
     ("ffmpeg_ffmpeg", "ffmpeg-ffmpeg", None),

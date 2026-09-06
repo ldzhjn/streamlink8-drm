@@ -27,6 +27,7 @@ from streamlink.stream.hls import (
     HLSStreamWorker,
     M3U8Parser,
     MuxedHLSStream,
+    parse_m3u8,
 )
 from streamlink.stream.hls.hls import log
 from streamlink.utils.crypto import AES, pad
@@ -1572,6 +1573,61 @@ def test_hls_insecure_scheme_multivariant(
     )
     with raises:
         HLSStream.parse_variant_playlist(session, multivariant)
+
+
+def test_hls_allow_insecure_uris_parser():
+    playlist = parse_m3u8(
+        "\n".join([
+            "#EXTM3U",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1",
+            "http://mocked/media",
+            "",
+        ]),
+        base_uri="https://mocked/multivariant",
+        allow_insecure_uris=True,
+    )
+
+    assert playlist.playlists[0].uri == "http://mocked/media"
+
+
+def test_hls_allow_insecure_uris_option(session: Streamlink, requests_mock: rm.Mocker):
+    multivariant = "https://mocked/multivariant"
+    media = "http://mocked/media"
+    requests_mock.register_uri("GET", media, text="")
+    requests_mock.register_uri(
+        "GET",
+        multivariant,
+        text="\n".join([
+            "#EXTM3U",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1",
+            media,
+            "",
+        ]),
+    )
+
+    session.set_option("hls-allow-insecure-uris", True)
+
+    assert list(HLSStream.parse_variant_playlist(session, multivariant)) == ["0.001k"]
+
+
+def test_hls_decryption_key_allows_insecure_uris(session: Streamlink, requests_mock: rm.Mocker):
+    multivariant = "https://mocked/multivariant"
+    media = "http://mocked/media"
+    requests_mock.register_uri("GET", media, text="")
+    requests_mock.register_uri(
+        "GET",
+        multivariant,
+        text="\n".join([
+            "#EXTM3U",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1",
+            media,
+            "",
+        ]),
+    )
+
+    session.set_option("decryption_key", "00" * 16)
+
+    assert list(HLSStream.parse_variant_playlist(session, multivariant)) == ["0.001k"]
 
 
 @patch("streamlink.stream.hls.hls.HLSStreamWorker.wait", Mock(return_value=True))

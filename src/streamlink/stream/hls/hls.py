@@ -386,7 +386,11 @@ class HLSStreamWorker(SegmentedStreamWorker[HLSSegment, Response]):
         res = self._fetch_playlist()
 
         try:
-            playlist = parse_m3u8(res, parser=self.stream.__parser__)
+            playlist = parse_m3u8(
+                res,
+                parser=self.stream.__parser__,
+                allow_insecure_uris=self.stream.allow_insecure_uris(),
+            )
         except ValueError as err:
             raise StreamError(err) from err
 
@@ -670,6 +674,9 @@ class HLSStream(HTTPStream):
     def should_use_ffmpeg_decryption(self) -> bool:
         return self.ffmpeg_decryption and bool(self.session.options.get("decryption_key"))
 
+    def allow_insecure_uris(self) -> bool:
+        return bool(self.session.options.get("hls-allow-insecure-uris") or self.session.options.get("decryption_key"))
+
     def __json__(self):  # noqa: PLW3201
         json = super().__json__()
 
@@ -730,7 +737,11 @@ class HLSStream(HTTPStream):
         # noinspection PyBroadException
         try:
             res = cls._fetch_playlist(session, playlist.uri, **request_args)
-            media_playlist = parse_m3u8(res, parser=cls.__parser__)
+            media_playlist = parse_m3u8(
+                res,
+                parser=cls.__parser__,
+                allow_insecure_uris=cls._allow_insecure_uris(session),
+            )
             if media_playlist.is_master or not media_playlist.segments:
                 raise ValueError
         except KeyboardInterrupt:  # pragma: no cover
@@ -750,6 +761,10 @@ class HLSStream(HTTPStream):
             return False, False
 
         return True, True
+
+    @classmethod
+    def _allow_insecure_uris(cls, session: Streamlink) -> bool:
+        return bool(session.options.get("hls-allow-insecure-uris") or session.options.get("decryption_key"))
 
     @classmethod
     def parse_variant_playlist(
@@ -803,7 +818,11 @@ class HLSStream(HTTPStream):
         res = cls._fetch_playlist(session, url, **request_args)
 
         try:
-            multivariant = parse_m3u8(res, parser=cls.__parser__)
+            multivariant = parse_m3u8(
+                res,
+                parser=cls.__parser__,
+                allow_insecure_uris=cls._allow_insecure_uris(session),
+            )
         except ValueError as err:
             raise OSError(f"Failed to parse playlist: {err}") from err
 

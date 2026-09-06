@@ -143,10 +143,11 @@ class M3U8Parser(Generic[TM3U8_co, THLSSegment_co, THLSPlaylist_co], metaclass=M
     _tag_re = re.compile(r"#(?P<tag>[\w-]+)(:(?P<value>.+))?")
     _res_re = re.compile(r"(\d+)x(\d+)")
 
-    def __init__(self, base_uri: str | None = None):
+    def __init__(self, base_uri: str | None = None, *, allow_insecure_uris: bool = False):
         # PEP 696 might solve this
         self.m3u8: TM3U8_co = self.__m3u8__(base_uri)  # type: ignore[assignment, ty:invalid-assignment]
         self._scheme = urlparse(base_uri).scheme if base_uri else None
+        self.allow_insecure_uris = allow_insecure_uris
 
         self._expect_playlist: bool = False
         self._streaminf: dict[str, str] | None = None
@@ -634,7 +635,7 @@ class M3U8Parser(Generic[TM3U8_co, THLSSegment_co, THLSPlaylist_co], metaclass=M
     def uri(self, uri: str) -> str:
         if uri and (scheme := urlparse(uri).scheme):
             base_scheme = self._scheme
-            if not base_scheme or is_insecure_scheme(base_scheme, scheme):
+            if not self.allow_insecure_uris and (not base_scheme or is_insecure_scheme(base_scheme, scheme)):
                 raise ValueError(f"Prevented access to insecure resource in playlist: {base_scheme=!r} {scheme=!r}")
             return uri
         elif uri and self.m3u8.uri:
@@ -689,6 +690,8 @@ def parse_m3u8(
     data: str | Response,
     base_uri: str | None = None,
     parser: type[M3U8Parser[TM3U8_co, THLSSegment_co, THLSPlaylist_co]] = M3U8Parser,
+    *,
+    allow_insecure_uris: bool = False,
 ) -> TM3U8_co:
     """
     Parse an M3U8 playlist from a string of data or an HTTP response.
@@ -702,4 +705,4 @@ def parse_m3u8(
     if base_uri is None and isinstance(data, Response):
         base_uri = data.url
 
-    return parser(base_uri).parse(data)
+    return parser(base_uri, allow_insecure_uris=allow_insecure_uris).parse(data)
