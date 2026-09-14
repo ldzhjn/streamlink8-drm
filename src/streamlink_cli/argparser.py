@@ -1243,6 +1243,19 @@ def build_parser():
             Default is 3.
         """,
     )
+    transport_dash.add_argument(
+        "--dash-live-edge",
+        type=num(int, ge=1),
+        metavar="SEGMENTS",
+        help="""
+            Number of segments from the live stream's current live position to begin streaming.
+
+            Higher values increase latency, but reduce the chance of buffering when a DASH manifest publishes segments
+            close to their live edge.
+
+            Default is determined by the DASH manifest.
+        """,
+    )
 
     transport_ffmpeg.add_argument(
         "--ffmpeg-ffmpeg",
@@ -1624,6 +1637,7 @@ _ARGUMENT_TO_SESSIONOPTION: list[tuple[str, str, Callable[[Any], Any] | type | N
     ("hls_allow_insecure_uris", "hls-allow-insecure-uris", None),
     ("hls_audio_select", "hls-audio-select", None),
     ("dash_manifest_reload_attempts", "dash-manifest-reload-attempts", None),
+    ("dash_live_edge", "dash-live-edge", None),
     ("ffmpeg_ffmpeg", "ffmpeg-ffmpeg", None),
     ("ffmpeg_no_validation", "ffmpeg-no-validation", None),
     ("ffmpeg_verbose", "ffmpeg-verbose", None),

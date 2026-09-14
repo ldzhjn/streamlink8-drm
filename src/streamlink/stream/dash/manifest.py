@@ -314,6 +314,8 @@ class MPD(MPDNode):
     DEFAULT_LIVE_EDGE_SEGMENTS = 3
 
     def __init__(self, *args, url: str | None = None, **kwargs) -> None:
+        live_edge_segments = kwargs.pop("live_edge_segments", None)
+
         # top level has no parent
         kwargs["root"] = self
         kwargs["parent"] = None
@@ -323,6 +325,7 @@ class MPD(MPDNode):
         self.url = url
         self.timelines = defaultdict(lambda: -1)
         self.timelines.update(kwargs.pop("timelines", {}))
+        self.liveEdgeSegments = live_edge_segments
 
         self.id = self.attr("id")
         self.profiles = self.attr(
@@ -842,7 +845,9 @@ class SegmentList(_MultipleSegmentBaseType):
         """Calculate the optimal segment number to start based on the suggestedPresentationDelay"""
         suggested_delay = self.root.suggestedPresentationDelay
 
-        if not self.duration:
+        if self.root.liveEdgeSegments is not None:
+            offset = self.root.liveEdgeSegments
+        elif not self.duration:
             log.info(f"Unknown segment duration. Falling back to an offset of {MPD.DEFAULT_LIVE_EDGE_SEGMENTS} segments.")
             offset = MPD.DEFAULT_LIVE_EDGE_SEGMENTS
         else:
@@ -976,8 +981,6 @@ class SegmentTemplate(_MultipleSegmentBaseType):
             time = self.root.timelines[ident]
             is_initial = time == -1
 
-            threshold = self.root.publishTime - self.root.suggestedPresentationDelay
-
             # transform the timeline into a segment list
             timeline = []
             available_at = self.root.publishTime
@@ -988,7 +991,10 @@ class SegmentTemplate(_MultipleSegmentBaseType):
             for number, segment in reversed(list(zip(count(self.startNumber), self.segmentTimeline.segments))):
                 # stop once the suggestedPresentationDelay is reached on the first manifest parsing
                 # or when a segment with a lower or equal time value was already returned from an earlier manifest
-                if is_initial and available_at <= threshold or segment.t <= time:
+                if is_initial and self.root.liveEdgeSegments is not None:
+                    if len(timeline) >= self.root.liveEdgeSegments:
+                        break
+                elif (is_initial and available_at <= self.root.publishTime - self.root.suggestedPresentationDelay) or segment.t <= time:
                     break
 
                 timeline.append((number, segment, available_at))
