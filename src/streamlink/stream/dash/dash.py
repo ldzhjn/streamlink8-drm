@@ -458,7 +458,7 @@ class DASHStream(Stream):
         if video and audio and FFMPEGMuxer.is_usable(self.session):
             video.open()
             audio.open()
-            return FFMPEGMuxer(self.session, video, audio, copyts=True).open()
+            return FFMPEGMuxer(self.session, video, audio).open()
         elif video:
             video.open()
             return video

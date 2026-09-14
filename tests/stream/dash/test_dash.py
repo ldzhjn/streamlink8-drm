@@ -501,7 +501,7 @@ class TestDASHStreamOpen:
         ]
         assert mock_reader_video.open.call_count == 1
         assert mock_reader_audio.open.call_count == 1
-        assert muxer.call_args_list == [call(session, mock_reader_video, mock_reader_audio, copyts=True)]
+        assert muxer.call_args_list == [call(session, mock_reader_video, mock_reader_audio)]
 
 
 class TestDASHStreamWorker:
