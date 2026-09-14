@@ -221,10 +221,6 @@ class StreamlinkOptions(Options):
           - ``int``
           - ``3``
           - Max number of DASH manifest reload attempts before giving up
-        * - dash-live-edge
-          - ``int | None``
-          - ``None``
-          - Number of segments from the live position of the DASH stream to start reading
         * - ffmpeg-ffmpeg
           - ``str | None``
           - ``None``
@@ -336,7 +332,6 @@ class StreamlinkOptions(Options):
             "hls-allow-insecure-uris": False,
             "hls-audio-select": [],
             "dash-manifest-reload-attempts": 3,
-            "dash-live-edge": None,
             "ffmpeg-ffmpeg": None,
             "ffmpeg-no-validation": False,
             "ffmpeg-validation-timeout": 4.0,

@@ -214,20 +214,6 @@ class TestMPDParser:
                 "http://test.se/video-time=1525450872000-2800000-0.m4s?z32=",
             ]
 
-    def test_segments_dynamic_time_live_edge(self):
-        with xml("dash/test_3.mpd") as mpd_xml:
-            mpd = MPD(mpd_xml, base_url="http://test.se/", url="http://test.se/manifest.mpd", live_edge_segments=3)
-
-            segments = mpd.periods[0].adaptationSets[0].representations[0].segments()
-            init_segment = next(segments)
-            assert init_segment.uri == "http://test.se/video-2800000-0.mp4?z32="
-
-            assert [segment.uri for segment in itertools.islice(segments, 5)] == [
-                "http://test.se/video-time=1525450864000-2800000-0.m4s?z32=",
-                "http://test.se/video-time=1525450868000-2800000-0.m4s?z32=",
-                "http://test.se/video-time=1525450872000-2800000-0.m4s?z32=",
-            ]
-
     # access manifest one hour after its availabilityStartTime
     @pytest.mark.parametrize(
         ("frozen_time", "timestamp"),

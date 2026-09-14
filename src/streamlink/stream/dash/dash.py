@@ -173,7 +173,6 @@ class DASHStreamWorker(SegmentedStreamWorker[DASHSegment, Response]):
             base_url=self.mpd.base_url,
             url=self.mpd.url,
             timelines=self.mpd.timelines,
-            live_edge_segments=self.mpd.liveEdgeSegments,
         )
 
         new_rep = new_mpd.get_representation(self.reader.ident)
@@ -321,7 +320,6 @@ class DASHStream(Stream):
         """
 
         manifest, mpd_params = cls.fetch_manifest(session, url_or_manifest, **kwargs)
-        mpd_params["live_edge_segments"] = session.options.get("dash-live-edge")
         passthrough_encrypted = session.options.get("stream-passthrough-encrypted")
         ffmpeg_decryption = bool(session.options.get("decryption_key"))
         allow_encrypted = passthrough_encrypted or ffmpeg_decryption
